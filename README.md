@@ -80,3 +80,46 @@ Less point in GPX (GoPro have ~18Hz of GPS data)
 ```
 $ ./gpsbabel -t -i gpx -f /path/to/input.gpx -o subrip -x track,speed -x simplify,count=500 -F /path/to/output.srt
 ```
+
+SCRIPTS
+=======
+
+## sub.py
+
+This script will auto extrat gpx data from GoPro Videos. And generate `.ssa` subtitle, `.gpx` GPS data.
+
+### Prerequirements
+
+You should install all the stuff here metion before (3 fork version things, and ffmpeg), and `asspy`, `gpxpy` Python packages.
+
+### HOWTO Use
+
+```
+usage: sub.py [-h] [--inputs INPUTS [INPUTS ...]]
+$ python sub.py -i GX010010.MP4
+...
+$ ls
+GX010010.MP4 GX010010.ssa GX010010.gpx
+```
+
+ffmpeg
+======
+
+## Common use (convert to 720p)
+
+```
+$ ffmpeg -i GX010010.MP4 -s hd720 -c:v libx264 -crf 23 -preset slow out.mp4
+```
+
+## Merge subtitle into the video
+
+```
+$ ffmpeg -i GX010010.MP4 -vf 'ass=GX010010.ssa' out.mp4
+```
+
+## Cut the video, and with subtitles (2 step)
+
+```
+$ ffmpeg -ss 100 -i GX010010.ssa GX010010_seek.ssa
+$ ffmpeg -hwaccel vaapi -ss 100 -t 6 -i GX010010.MP4 -vf 'ass=GX010010_seek.ssa' -s hd720 -c:v libx264 -crf 23 -preset slow out.mp4
+```
