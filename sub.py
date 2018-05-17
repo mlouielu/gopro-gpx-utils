@@ -52,6 +52,15 @@ def cleanup(basename):
     subprocess.Popen(['rm', f'{basename}.srt', f'{basename}.bin'])
 
 
+def cut(filename, ss, to):
+    basename = os.path.splitext(os.path.basename(filename))[0]
+    subprocess.Popen(['ffmpeg', '-ss', ss,
+        '-i', f'{basename}.ssa', f'{basename}_seek.ssa']).wait()
+    subprocess.Popen(['ffmpeg', '-hwaccel', 'vaapi', '-ss', ss, '-t', str(to),
+        '-i', f'{basename}.MP4', '-vf', f'ass={basename}_seek.ssa',
+        '-s', 'hd720', '-c:v', 'libx264', '-crf', '23', '-preset', 'slow', '檢.mp4'])
+
+
 def main(filename):
     basename = os.path.splitext(os.path.basename(filename))[0]
     met = get_met_stream(filename)
@@ -66,7 +75,15 @@ def main(filename):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--inputs', '-i', type=str, nargs='+')
+    parser.add_argument('--starttimes', '-ss', type=str, nargs='+')
+    parser.add_argument('--to', '-t', type=int, nargs='+')
     args = parser.parse_args()
 
-    for file in args.inputs:
-        main(file)
+
+    if not args.starttimes and args.to:
+        for file in args.inputs:
+            main(file)
+    else:
+        for file, ss, to in zip(args.inputs, args.starttimes, args.to):
+            main(file)
+            cut(file, ss, to)
