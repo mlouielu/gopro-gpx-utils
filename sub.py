@@ -52,13 +52,15 @@ def cleanup(basename):
     subprocess.Popen(['rm', f'{basename}.srt', f'{basename}.bin'])
 
 
-def cut(filename, ss, to):
+def cut(filename, ss, to, quality=24):
     basename = os.path.splitext(os.path.basename(filename))[0]
     subprocess.Popen(['ffmpeg', '-ss', ss,
         '-i', f'{basename}.ssa', f'{basename}_seek.ssa']).wait()
-    subprocess.Popen(['ffmpeg', '-hwaccel', 'vaapi', '-ss', ss, '-t', str(to),
-        '-i', f'{basename}.MP4', '-vf', f'ass={basename}_seek.ssa',
-        '-s', 'hd720', '-c:v', 'libx264', '-crf', '23', '-preset', 'slow', '檢.mp4'])
+    subprocess.Popen(['ffmpeg', '-init_hw_device',  'vaapi=foo:/dev/dri/renderD128',
+        '-hwaccel', 'vaapi', '-hwaccel_output_format', 'vaapi', '-hwaccel_device', 'foo',
+        '-ss', ss, '-t', str(to), '-i', f'{basename}.MP4', '-filter_hw_device', 'foo',
+        '-vf', f'scale_vaapi=w=1920:h=1080,hwmap=derive_device=vaapi,format=nv12|vaapi,ass={basename}_seek.ssa,hwmap',
+        '-c:v', 'h264_vaapi', '-qp', str(quality), '檢.mp4']).wait()
 
 
 def main(filename):
@@ -87,3 +89,4 @@ if __name__ == '__main__':
         for file, ss, to in zip(args.inputs, args.starttimes, args.to):
             main(file)
             cut(file, ss, to)
+
