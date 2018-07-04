@@ -1,4 +1,5 @@
 import argparse
+import datetime
 import os
 import re
 import subprocess
@@ -33,7 +34,7 @@ def gpx_to_srt(basename):
 
 
 def srt_to_ssa(basename):
-    subprocess.Popen(['ffmpeg', '-i', f'{basename}.srt', f'{basename}.ssa']).wait()
+    subprocess.Popen(['ffmpeg', '-y', '-i', f'{basename}.srt', f'{basename}.ssa']).wait()
 
 
 def fix_ssa_start_end(basename):
@@ -41,7 +42,7 @@ def fix_ssa_start_end(basename):
         d = ass.parse(f)
         prev = d.events[0]
         for i in d.events[1:]:
-            i.start = prev.end
+            i.start = prev.end + datetime.timedelta(seconds=2)
             prev = i
 
     with open(f'{basename}.ssa', 'w') as f:
@@ -52,15 +53,30 @@ def cleanup(basename):
     subprocess.Popen(['rm', f'{basename}.srt', f'{basename}.bin'])
 
 
-def cut(filename, ss, to, quality=24):
+def cut(filename, ss, to, output_filename, quality=20, encoder='libx264'):
     basename = os.path.splitext(os.path.basename(filename))[0]
-    subprocess.Popen(['ffmpeg', '-ss', ss,
+    subprocess.Popen(['ffmpeg', '-y', '-ss', ss,
         '-i', f'{basename}.ssa', f'{basename}_seek.ssa']).wait()
-    subprocess.Popen(['ffmpeg', '-init_hw_device',  'vaapi=foo:/dev/dri/renderD128',
+
+
+    h264_vaapi = ['ffmpeg', '-y', '-init_hw_device',  'vaapi=foo:/dev/dri/renderD128',
         '-hwaccel', 'vaapi', '-hwaccel_output_format', 'vaapi', '-hwaccel_device', 'foo',
         '-ss', ss, '-t', str(to), '-i', f'{basename}.MP4', '-filter_hw_device', 'foo',
-        '-vf', f'scale_vaapi=w=1920:h=1080,hwmap=derive_device=vaapi,format=nv12|vaapi,ass={basename}_seek.ssa,hwmap',
-        '-c:v', 'h264_vaapi', '-qp', str(quality), '檢.mp4']).wait()
+        '-vf', f'scale_vaapi=w=1280:h=720  ,hwmap=derive_device=vaapi,format=nv12|vaapi,ass={basename}_seek.ssa,hwmap',
+        '-c:v', 'h264_vaapi', '-qp', str(quality), f'{output_filename}.mp4']
+
+    libx264 = ['ffmpeg', '-y' , '-init_hw_device',  'vaapi=foo:/dev/dri/renderD128',
+        '-hwaccel', 'vaapi', '-hwaccel_output_format', 'vaapi', '-hwaccel_device', 'foo',
+        '-ss', ss, '-t', str(to), '-i', f'{basename}.MP4', '-filter_hw_device', 'foo',
+        '-vf', f'deinterlace_vaapi,scale_vaapi=w=1280:h=720,hwdownload,format=nv12,ass={basename}_seek.ssa',
+        '-c:v', 'libx264', f'{output_filename}.mp4']
+
+    encoders = {
+        'h264': h264_vaapi,
+        'libx264': libx264
+    }
+
+    subprocess.Popen(encoders[encoder]).wait()
 
 
 def main(filename):
@@ -78,15 +94,16 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--inputs', '-i', type=str, nargs='+')
     parser.add_argument('--starttimes', '-ss', type=str, nargs='+')
-    parser.add_argument('--to', '-t', type=int, nargs='+')
+    parser.add_argument('--to', '-t', type=str , nargs='+')
+    parser.add_argument('--output', '-o', type=str, nargs='+')
     args = parser.parse_args()
 
 
-    if not args.starttimes and args.to:
+    if not args.starttimes and not args.to:
         for file in args.inputs:
             main(file)
     else:
-        for file, ss, to in zip(args.inputs, args.starttimes, args.to):
+        for file, ss, to, filename in zip(args.inputs, args.starttimes, args.to, args.output):
             main(file)
-            cut(file, ss, to)
+            cut(file, ss, to, filename)
 
