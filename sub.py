@@ -28,8 +28,9 @@ def gpx_to_srt(basename):
         gpx = gpxpy.parse(f)
 
     date = gpx.tracks[0].segments[0].points[0].time.strftime("%Y-%m-%d")
+    print(date)
     subprocess.Popen(['gpsbabel', '-t', '-i', 'gpx', '-f', f'{basename}.gpx',
-        '-x', 'track,speed', '-o', f'subrip,format=%s km/h %e m\n{date} %t %l',
+        '-x', 'track,speed,merge', '-o', f'subrip,format=%s km/h %e m\n{date} %t %l',
         '-F', f'{basename}.srt']).wait()
 
 
@@ -53,29 +54,36 @@ def cleanup(basename):
     subprocess.Popen(['rm', f'{basename}.srt', f'{basename}.bin'])
 
 
-def cut(filename, ss, to, output_filename, quality=20, encoder='libx264'):
+def cut(filename, ss, to, output_filename, quality=20, encoder='libx264',
+        no_subtitle=False):
     basename = os.path.splitext(os.path.basename(filename))[0]
     subprocess.Popen(['ffmpeg', '-y', '-ss', ss,
         '-i', f'{basename}.ssa', f'{basename}_seek.ssa']).wait()
 
 
+    copy = ['ffmpeg', '-ss', ss, '-t', str(to), '-i', f'{basename}.MP4',
+            '-vf', f'ass={basename}_seek.ssa' if not no_subtitle else '',
+            f'{output_filename}.mp4']
+
     h264_vaapi = ['ffmpeg', '-y', '-init_hw_device',  'vaapi=foo:/dev/dri/renderD128',
         '-hwaccel', 'vaapi', '-hwaccel_output_format', 'vaapi', '-hwaccel_device', 'foo',
         '-ss', ss, '-t', str(to), '-i', f'{basename}.MP4', '-filter_hw_device', 'foo',
-        '-vf', f'scale_vaapi=w=1280:h=720  ,hwmap=derive_device=vaapi,format=nv12|vaapi,ass={basename}_seek.ssa,hwmap',
+        '-vf', f'scale_vaapi=w=1920:h=1080  ,hwmap=derive_device=vaapi,format=nv12|vaapi,hwmap' +
+                  (f',ass={basename}_seek.ssa' if not no_subtitle else ''),
         '-c:v', 'h264_vaapi', '-qp', str(quality), f'{output_filename}.mp4']
 
-    libx264 = ['ffmpeg', '-y' , '-init_hw_device',  'vaapi=foo:/dev/dri/renderD128',
+    libx264 = ['ffmpeg', '-y', '-init_hw_device',  'vaapi=foo:/dev/dri/renderD128',
         '-hwaccel', 'vaapi', '-hwaccel_output_format', 'vaapi', '-hwaccel_device', 'foo',
         '-ss', ss, '-t', str(to), '-i', f'{basename}.MP4', '-filter_hw_device', 'foo',
-        '-vf', f'deinterlace_vaapi,scale_vaapi=w=1280:h=720,hwdownload,format=nv12,ass={basename}_seek.ssa',
-        '-c:v', 'libx264', f'{output_filename}.mp4']
+        '-vf', f'deinterlace_vaapi,scale_vaapi=w=1920:h=1080,hwdownload,format=nv12' +
+               (f',ass={basename}_seek.ssa' if not no_subtitle else ''),
+               '-c:v', 'libx264', f'{output_filename}.mp4']
 
     encoders = {
+        'copy': copy,
         'h264': h264_vaapi,
         'libx264': libx264
     }
-
     subprocess.Popen(encoders[encoder]).wait()
 
 
@@ -96,8 +104,8 @@ if __name__ == '__main__':
     parser.add_argument('--starttimes', '-ss', type=str, nargs='+')
     parser.add_argument('--to', '-t', type=str , nargs='+')
     parser.add_argument('--output', '-o', type=str, nargs='+')
+    parser.add_argument('--no-subtitle', action='store_true', default=False)
     args = parser.parse_args()
-
 
     if not args.starttimes and not args.to:
         for file in args.inputs:
@@ -105,5 +113,4 @@ if __name__ == '__main__':
     else:
         for file, ss, to, filename in zip(args.inputs, args.starttimes, args.to, args.output):
             main(file)
-            cut(file, ss, to, filename)
-
+            cut(file, ss, to, filename, no_subtitle=args.no_subtitle)
